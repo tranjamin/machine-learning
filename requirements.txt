@@ -1,0 +1,17 @@
+scikit-learn
+scipy
+metrics
+
+tensorflow
+tensorflow-addons
+tensorflow_probability
+
+seaborn
+numpy
+matplotlib
+pandas
+
+pydot
+pydot_ng
+pydotplus
+graphviz

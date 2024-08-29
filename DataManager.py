@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as nptype
 import matplotlib.pyplot as plt
 import math
+import copy
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
@@ -56,6 +57,12 @@ class Column(ABC):
     
     def __len__(self):
         return self.total_count
+    
+    def __copy__(self):
+        pass
+
+    def __deepcopy__(self, memo):
+        pass
 
 class CategoricalColumn(Column):
     def __init__(self, data):
@@ -71,6 +78,17 @@ class CategoricalColumn(Column):
         self.encodings = None
         self.unencode = None
         self.encoder = None
+    
+    def __copy__(self):
+        new = CategoricalColumn(self.data)
+        new.data = self.data.copy()
+        return new
+    
+    def __deepcopy__(self, memo):
+        new = CategoricalColumn(self.data)
+        new.data = self.data.copy()
+        memo[id(self)] = new
+        return new
     
     def onehot_encode(self) -> pd.DataFrame:
         '''
@@ -130,7 +148,27 @@ class NumericalColumn(Column):
         self.encodings = None
         self.unencode = None
         self.encoder = None
+
+    def get_mean(self):
+        return self.data.mean()
+
+    def get_std(self):
+        return self.data.std()
     
+    def get_cov(self):
+        return self.data.std()**2
+
+    def __copy__(self):
+        new = NumericalColumn(self.data)
+        new.data = self.data.copy()
+        return new
+    
+    def __deepcopy__(self, memo):
+        new = NumericalColumn(self.data)
+        new.data = self.data.copy()
+        memo[id(self)] = new
+        return new
+
     def entropy(self, width) -> float:
         running_total = 0
         bins = np.arange(self.min - width, self.max + width, width)
@@ -186,6 +224,12 @@ class NumericalColumn(Column):
     def make_numerical(self):
         return self
 
+    def transform(self, function: callable[int], inplace=True):
+        transformed = self.data.apply(function)
+        if inplace:
+            self.data = transformed
+        return transformed
+
 
 class Data():
     '''
@@ -238,7 +282,6 @@ class Data():
                 pass
         
         # store column data
-        self.num_columns = self.df.columns
         self.columns = self.df.columns
 
         # store columns as either categorical or numerical
@@ -254,11 +297,10 @@ class Data():
         '''
         Copies a dataset into a new object. This is a deepcopy so even Column objects are copied.
         '''
-        new_data = Data(self.df)
-        new_data.df = self.df
-        new_data.num_columns = self.num_columns
-        new_data.columns = self.df.columns
-        new_data.column_objects = self.column_objects
+        new_data = Data(self.df.copy())
+        # new_data.df = self.df
+        # new_data.columns = self.columns
+        # new_data.column_objects = copy.d/eepcopy(self.column_objects)
         return new_data
 
     def preview(self) -> None:
@@ -280,6 +322,23 @@ class Data():
         Determines whether a column is a categorical or not.
         '''
         return isinstance(self.get_col(col_name), CategoricalColumn)
+
+    def add_cols(self, cols: pd.DataFrame | pd.Series):
+        self.df = self.df.join(cols)
+        self.columns = self.df.columns
+
+        if isinstance(cols, pd.DataFrame):
+            for col_name in cols.columns:
+                data = cols.get(col_name)
+                if cols.get(col_name).dtype.name == 'object':
+                    self.column_objects[col_name] = CategoricalColumn(data)
+                else:
+                    self.column_objects[col_name] = NumericalColumn(data)
+        else:
+            if cols.dtype.name == 'object':
+                self.column_objects[cols.name] = CategoricalColumn(cols)
+            else:
+                self.column_objects[cols.name] = NumericalColumn(cols)
     
     def get_cols(self) -> dict[str, Column]:
         '''
@@ -313,11 +372,11 @@ class Data():
         plt.scatter(self.get_col(x).get_data(), self.get_col(y).get_data(), c=colormappings)
         plt.xlabel(self.get_col(x).name)
         plt.ylabel(self.get_col(y).name)
-        plt.title(f'Plot with colourmappings "{self.get_col(categories).name}"')
+        # plt.title(f'Plot with colourmappings "{self.get_col(categories).name}"')
         plt.legend()
-        plt.colorbar()
-        plt.ion()
-        plt.show()
+        # plt.colorbar()
+        # plt.ion()
+        # plt.show()
 
     def encode_categoricals(self) -> Data:
         '''
@@ -459,6 +518,11 @@ class Data():
         output_data = pd.DataFrame(self.df[outputs])
         input_data = self.df.drop(outputs, axis=1, inplace=False)
         return Data(input_data), Data(output_data)
+
+    def transform(self, col, function):
+        self.get_col(col).transform(function)
+        for col in self.columns:
+            self.update_data(col)
     
     def k_fold_validation_split(self, k):
         kf = KFold(k, shuffle=True)
@@ -467,7 +531,13 @@ class Data():
     def covariance_matrix(self):
         return np.cov(self.get_data(), rowvar=False)
     
-    def PCA_decompose(self, n_components=None):
+    def PCA_components(self, n_components=None):
         pca = PCA(n_components=n_components)
         pca.fit(self.get_data())
-        keys = self.get_data().columns
+        
+        return pca.components_, pca.explained_variance_ratio_
+    
+    def PCA_reduce(self, n_components=None):
+        pca = PCA(n_components=n_components)
+        new_df = pca.fit_transform(self.get_data())
+        return Data(pd.DataFrame(new_df))

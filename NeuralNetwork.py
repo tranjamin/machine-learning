@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 import tensorflow as tf
 import keras
-import keras.backend as K
+from typing import Optional
 
 import DataManager
 from Utils import GenericModel
@@ -49,6 +49,8 @@ class NeuralNetwork(GenericModel):
 
         self.is_functional: bool = False
     
+    ### GENERAL ###
+
     def make_functional(self):
         self.is_functional = True
 
@@ -128,16 +130,18 @@ class NeuralNetwork(GenericModel):
         '''
         self.val_split = size
 
-    def add_dense_layer(self, num_neurons: int, activation: str = 'relu', input_layer: bool=False) -> None:
+    ### LAYERS ###
+
+    def add_dense_layer(self, num_neurons: int, activation: str = 'relu', input_layer: bool=False, **kwargs) -> None:
         '''
         Add a dense layer to the neural network architecture.
         The first layer of the network should have input_layer=True
         '''
         if input_layer:
-            num_features = self.x_train.shape[1]
-            self.layers.append(tf.keras.layers.Dense(num_neurons, activation=activation, input_shape=(num_features,)))
+            self.layers.append(tf.keras.layers.Dense(num_neurons, activation=activation, 
+                input_shape=self.x_train.shape[1:], **kwargs))
         else:
-            self.layers.append(tf.keras.layers.Dense(num_neurons, activation=activation))
+            self.layers.append(tf.keras.layers.Dense(num_neurons, activation=activation, **kwargs))
 
     def add_dropout(self, dropout_rate: float = 0.1) -> None:
         '''
@@ -145,11 +149,88 @@ class NeuralNetwork(GenericModel):
         '''
         self.layers.append(tf.keras.layers.Dropout(rate=dropout_rate))
     
+    def add_conv2D_layer(self, 
+            kernel_size: tuple[int, int], 
+            filters: int, 
+            activation: str ='relu', 
+            padding: Optional[str] = "same",
+            strides: Optional[str] = (1,1),
+            input_layer: bool=False,
+            **kwargs):
+        if input_layer:
+            self.layers.append(tf.keras.layers.Conv2D(kernel_size=kernel_size, filters=filters, padding=padding, strides=strides, input_shape=self.x_train.shape[1:], activation=activation, **kwargs))
+        else:
+            self.layers.append(tf.keras.layers.Conv2D(kernel_size=kernel_size, filters=filters, padding=padding, strides=strides, activation=activation, **kwargs))
+
+    def add_pooling2D_layer(self, 
+            type: str, 
+            size: tuple[int, int],
+            padding: str = "valid",
+            strides: Optional[tuple[int, int]] = None):
+        if type == "max":
+            self.layers.append(tf.keras.layers.MaxPool2D(size, strides=strides, padding=padding))
+        elif type == "average":
+            self.layers.append(tf.keras.layers.AveragePooling2D(size, strides=strides, padding=padding))
+    
+    def add_global_pooling2D_layer(self, type: str):
+        if type == "max":
+            self.layers.append(tf.keras.layers.GlobalMaxPooling2D())
+        elif type == "average":
+            self.layers.append(tf.keras.layers.GlobalAveragePooling2D())
+    
+    def add_flatten_layer(self, input_layer: bool = False):
+        if input_layer:
+            self.layers.append(tf.keras.layers.Flatten(input_shape=self.x_train.shape[1:]))
+        else:
+            self.layers.append(tf.keras.layers.Flatten())
+
+    def add_sparse_output_layer(self):
+        self.layers.append(tf.keras.layers.Dense(self.y_train.shape[-1], activation='softmax'))
+
+    def add_output_layer(self):
+        self.layers.append(tf.keras.layers.Dense(1, activation='relu'))
+    
+    def add_batch_norm(self):
+        self.layers.append(tf.keras.layers.BatchNormalization())
+    
+    def add_activation(self, activation="relu"):
+        self.layers.append(tf.keras.layers.Activation(activation))
+
+    def add_residual_layer(self, filters, activation="relu", size_match=False):
+        def functional_res_block(x):
+            skip_connection = x
+
+            x = tf.keras.layers.Conv2D(filters, kernel_size=(3,3), padding="same",
+                strides=(2,2) if size_match else (1,1),
+                kernel_initializer=tf.keras.initializers.HeNormal()
+                )(x)
+
+            x = tf.keras.layers.BatchNormalization(axis=3)(x)
+            x = tf.keras.layers.Activation(activation)(x)
+            x = tf.keras.layers.Conv2D(filters, kernel_size=(3,3), padding="same", 
+                kernel_initializer=tf.keras.initializers.HeNormal())(x)
+            x = tf.keras.layers.BatchNormalization(axis=3)(x)
+
+            if size_match:
+                skip_connection = tf.keras.layers.Conv2D(filters, kernel_size=(1,1), strides=(2,2),
+                kernel_initializer=tf.keras.initializers.HeNormal())(skip_connection)
+
+            x = tf.keras.layers.Add()([x, skip_connection])
+            x = tf.keras.layers.Activation(activation)(x)
+            return x
+    
+        self.layers.append(functional_res_block)
+    
+    def add_input_layer(self):
+        self.layers.append(tf.keras.layers.Input(shape=self.x_train.shape[1:]))
+    
     def add_generic_layer(self, layer: tf.keras.layers.Layer) -> None:
         '''
         Add a generic layer
         '''
         self.layers.append(layer)
+
+    ### COMPILE PARAMETERS ###
 
     def set_loss_function(self, loss_function: str | tf.keras.losses.Loss) -> None:
         '''
@@ -173,11 +254,14 @@ class NeuralNetwork(GenericModel):
             min_delta=min_delta
             )
 
-    def add_metric(self, metric: str | tf.keras.metrics.Metric) -> None:
+    def add_metric(self, metric: str | tf.keras.metrics.Metric | list[str | tf.keras.metrics.Metric]) -> None:
         '''
         Add a performance metric
         '''
-        self.metrics.append(metric)
+        if type(metric) == type([]):
+            self.metrics += metric
+        else:
+            self.metrics.append(metric)
 
     def add_training_data(self, x_train, y_train):
         try:
@@ -207,15 +291,31 @@ class NeuralNetwork(GenericModel):
         self.x_test = x_test
         self.y_test = y_test
 
-    def compile_model(self) -> None:
+    def compile_model(self, store_initial_values=False) -> None:
         '''
         Compile the neural network layers
         '''
         if not self.is_functional:
             self.model = tf.keras.Sequential(self.layers)
-        self.model.compile(optimizer=self.optimiser, loss=self.loss_function, metrics=self.metrics)
+        else:
+            inputs = None
+            outputs = None
+            x = None
+            for layer_no, layer in enumerate(self.layers):
+                if layer_no == 0:
+                    inputs = layer
+                elif layer_no == 1:
+                    x = layer(inputs)
+                elif layer_no == len(self.layers) - 1:
+                    outputs = layer(x)
+                else:
+                    x = layer(x)
 
-        self.initial_variable_values = [tf.identity(var) for var in self.model.trainable_variables]
+            self.model = tf.keras.Model(inputs, outputs)
+
+        self.model.compile(optimizer=self.optimiser, loss=self.loss_function, metrics=self.metrics)
+        if store_initial_values:
+            self.initial_variable_values = [tf.identity(var) for var in self.model.trainable_variables]
 
     def summary(self) -> None:
         '''
@@ -223,10 +323,10 @@ class NeuralNetwork(GenericModel):
         '''
         self.model.summary()
 
-    def fit(self):
-        return self.fit_model()
+    def fit(self, verbose=2, **kwargs):
+        return self.fit_model(verbose=verbose, **kwargs)
 
-    def fit_model(self):
+    def fit_model(self, verbose=2, **kwargs):
         '''
         analogous to self.fit()
         '''
@@ -235,13 +335,16 @@ class NeuralNetwork(GenericModel):
         self.history = self.model.fit(self.x_train, self.y_train, 
                             epochs=self.epochs, 
                             batch_size=self.batch_size, 
-                            verbose=2,
+                            verbose=verbose,
                             validation_split=self.val_split,
-                            callbacks=([self.earlystopping, timekeeping] if self.earlystopping is not None else [timekeeping])
+                            callbacks=([self.earlystopping, timekeeping] if self.earlystopping is not None else [timekeeping]),
+                            **kwargs
                             )
         
         self.history.history['time_elapsed'] = timekeeping.epoch_times
     
+    ### FOR INFERENCE ###
+
     def predict(self, x):
         return self.model.predict(x)
     

@@ -9,6 +9,7 @@ import keras
 from typing import Optional
 
 import DataManager
+import IPython
 from Utils import GenericModel
 
 class monitorTime(tf.keras.callbacks.Callback):
@@ -35,7 +36,7 @@ class NeuralNetwork(GenericModel):
         self.optimiser: str | tf.keras.optimizers.Optimizer = None
         self.loss_function: str | tf.keras.losses.Loss = None
         self.metrics: list[str | tf.keras.metrics.Metric] = []
-        self.earlystopping: tf.keras.callbacks.EarlyStopping | None = None
+        self.callbacks: list[tf.keras.callbacks] = []
 
         # defaults
         self.epochs: int = 100
@@ -244,15 +245,26 @@ class NeuralNetwork(GenericModel):
         '''
         self.optimiser = optimiser
 
+    ### CALLBACKS ###
+
     def set_early_stopping(self, metric: str='val_loss', patience: int =20, min_delta: float =0.01) -> None:
         '''
         Add early stopping to the network.
         '''
-        self.earlystopping = tf.keras.callbacks.EarlyStopping(
+        earlystopping = tf.keras.callbacks.EarlyStopping(
             monitor=metric, 
             patience=patience, 
             min_delta=min_delta
             )
+        self.callbacks.append(earlystopping)
+    
+    def enable_model_checkpoints(self, path="./checkpoints.keras"):
+        checkpoints = tf.keras.callbacks.ModelCheckpoint(path, save_freq="epoch")
+        self.callbacks.append(checkpoints)
+    
+    def enable_tensorboard(self, path="./tensorboard.keras", **kwargs):
+        tensorboard = tf.keras.callbacks.TensorBoard(log_dir=path, **kwargs)
+        self.callbacks.append(tensorboard)
 
     def add_metric(self, metric: str | tf.keras.metrics.Metric | list[str | tf.keras.metrics.Metric]) -> None:
         '''
@@ -332,12 +344,30 @@ class NeuralNetwork(GenericModel):
         '''
         timekeeping = monitorTime()
         timekeeping.start_time()
+        self.callbacks.append(timekeeping)
+
         self.history = self.model.fit(self.x_train, self.y_train, 
                             epochs=self.epochs, 
                             batch_size=self.batch_size, 
                             verbose=verbose,
                             validation_split=self.val_split,
-                            callbacks=([self.earlystopping, timekeeping] if self.earlystopping is not None else [timekeeping]),
+                            callbacks=self.callbacks,
+                            **kwargs
+                            )
+        
+        self.history.history['time_elapsed'] = timekeeping.epoch_times
+    
+    def fit_model_batches(self, batches, verbose=2, **kwargs):
+        timekeeping = monitorTime()
+        timekeeping.start_time()
+        self.callbacks.append(timekeeping)
+
+        self.history = self.model.fit(batches,
+                            epochs=self.epochs, 
+                            batch_size=self.batch_size, 
+                            verbose=verbose,
+                            validation_split=self.val_split,
+                            callbacks=self.callbacks,
                             **kwargs
                             )
         
@@ -356,7 +386,7 @@ class NeuralNetwork(GenericModel):
         metric_evaluations = self.model.evaluate(self.x_train, self.y_train, return_dict=True)
         return metric_evaluations
 
-    def visualise_training(self):
+    def visualise_training(self, to_file=False):
         '''
         visualise the learning curve of a network
         '''
@@ -378,7 +408,10 @@ class NeuralNetwork(GenericModel):
                 subplot.plot(self.history.history['val_' + metric_name], label='val')
             subplot.legend()
         
-        fig.show()
+        if not to_file:
+            fig.show()
+        else:
+            plt.savefig("training_visualisation.png")
         return
 
     def get_dominance(self, type='connection_weights'):
@@ -438,4 +471,102 @@ class NeuralNetwork(GenericModel):
             return dict(zip(feature_names, input_importances / input_importances.sum()))
 
 class FunctionalNetwork(NeuralNetwork):
-    pass
+    def __init__(self):
+        super().__init__()
+        self.is_functional = True
+
+class AdversarialNetwork(NeuralNetwork):
+    z = tf.random.normal([16, 100])
+
+    def __init__(self):
+        super().__init__()
+        self.generator = None
+        self.critic = None
+
+        self.critic_loss = []
+        self.generator_loss = []
+    
+    def set_generator(self, model: NeuralNetwork):
+        self.generator = model
+    
+    def set_critic(self, model: NeuralNetwork):
+        self.critic = model
+
+    @tf.function
+    def training_step(self, images):
+
+        noise_dim = 100
+        noise = tf.random.normal([self.batch_size, noise_dim])
+
+        with tf.GradientTape() as generator_tape, tf.GradientTape() as critic_tape:
+            generated_images = self.generator.get_model()(noise, training=True)
+            
+            real_output = self.critic.get_model()(images, training=True)
+            fake_output = self.critic.get_model()(generated_images, training=True)
+
+            generator_loss = self.generator.loss_function(fake_output)
+            critic_loss = self.critic.loss_function(real_output, fake_output)
+
+        generator_grad = generator_tape.gradient(generator_loss, self.generator.get_model().trainable_variables)
+        critic_grad = critic_tape.gradient(critic_loss, self.critic.get_model().trainable_variables)
+
+        self.generator.optimiser.apply_gradients(zip(generator_grad, self.generator.get_model().trainable_variables))
+        self.critic.optimiser.apply_gradients(zip(critic_grad, self.critic.get_model().trainable_variables))
+    
+    def fit(self, dataset):
+        for epoch in range(self.epochs):
+            print(f"Epoch {epoch + 1}/{self.epochs}")
+            progress_bar = tf.keras.utils.Progbar(self.x_train.shape[0], stateful_metrics=None)
+            for image_batch in dataset:
+                self.training_step(image_batch)
+                
+                values = None
+                generated = self.generator.get_model()(AdversarialNetwork.z, training=False)
+
+                preds = self.critic.model.predict(generated, verbose='0')
+                critic_fake_loss = tf.keras.losses.BinaryCrossentropy()(tf.zeros_like(preds), preds)
+                critic_fake_accuracy = tf.keras.metrics.BinaryAccuracy()(tf.zeros_like(preds), preds)
+                values = [("PPV", critic_fake_accuracy), ("loss", critic_fake_loss)]
+
+                self.generator_loss.append(critic_fake_loss)
+                self.critic_loss.append(critic_fake_loss)
+
+                progress_bar.add(self.batch_size, values=values)
+            
+            IPython.display.clear_output(wait=True)
+            self.generate_image(AdversarialNetwork.z)
+        
+        IPython.display.clear_output(wait=True)
+        self.generate_image(AdversarialNetwork.z)
+    
+    def generate_image(self, test_input):
+        predictions = self.generator.get_model()(test_input, training=False)
+
+        plt.figure(figsize=(4, 4))
+
+        for i in range(predictions.shape[0]):
+            plt.subplot(4, 4, i+1)
+            plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
+            plt.axis('off')
+
+        plt.savefig(f'image_{time.time()}.png')
+    
+    def visualise_training(self, to_file=False):
+        plot_size = (1, 1)
+        fig, plot_axes = plt.subplots(*plot_size)
+        fig.suptitle('Learning Curves')
+
+        subplot = plot_axes
+        subplot.set(ylabel="loss")
+        subplot.plot(self.generator_loss, label="generator")
+        subplot.plot(self.critic_loss, label="critic")
+        subplot.legend()
+        
+        if not to_file:
+            fig.show()
+        else:
+            plt.savefig("training_visualisation2.png")
+        return
+
+
+

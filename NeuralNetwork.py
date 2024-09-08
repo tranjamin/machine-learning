@@ -52,6 +52,9 @@ class NeuralNetwork(GenericModel):
     
     ### GENERAL ###
 
+    def enable_mixed_precision():
+        tf.keras.mixed_precision.set_global_policy('mixed_float16')
+
     def make_functional(self):
         self.is_functional = True
 
@@ -386,7 +389,7 @@ class NeuralNetwork(GenericModel):
         metric_evaluations = self.model.evaluate(self.x_train, self.y_train, return_dict=True)
         return metric_evaluations
 
-    def visualise_training(self, to_file=False):
+    def visualise_training(self, to_file=False, filename="training_visualisation.png"):
         '''
         visualise the learning curve of a network
         '''
@@ -411,7 +414,7 @@ class NeuralNetwork(GenericModel):
         if not to_file:
             fig.show()
         else:
-            plt.savefig("training_visualisation.png")
+            plt.savefig(filename)
         return
 
     def get_dominance(self, type='connection_weights'):
@@ -513,7 +516,7 @@ class AdversarialNetwork(NeuralNetwork):
         self.generator.optimiser.apply_gradients(zip(generator_grad, self.generator.get_model().trainable_variables))
         self.critic.optimiser.apply_gradients(zip(critic_grad, self.critic.get_model().trainable_variables))
     
-    def fit(self, dataset):
+    def fit(self, dataset, val_dataset):
         for epoch in range(self.epochs):
             print(f"Epoch {epoch + 1}/{self.epochs}")
             progress_bar = tf.keras.utils.Progbar(self.x_train.shape[0], stateful_metrics=None)
@@ -522,14 +525,18 @@ class AdversarialNetwork(NeuralNetwork):
                 
                 values = None
                 generated = self.generator.get_model()(AdversarialNetwork.z, training=False)
+                generated_preds = self.critic.model.predict(generated, verbose='0')
 
-                preds = self.critic.model.predict(generated, verbose='0')
-                critic_fake_loss = tf.keras.losses.BinaryCrossentropy()(tf.zeros_like(preds), preds)
-                critic_fake_accuracy = tf.keras.metrics.BinaryAccuracy()(tf.zeros_like(preds), preds)
-                values = [("PPV", critic_fake_accuracy), ("loss", critic_fake_loss)]
+                real_preds = self.critic.model.predict(val_dataset, verbose='0')
 
-                self.generator_loss.append(critic_fake_loss)
-                self.critic_loss.append(critic_fake_loss)
+                generator_loss = self.generator.loss_function(generated_preds)
+                critic_loss = self.critic.loss_function(real_preds, generated_preds)
+
+                critic_fake_accuracy = tf.keras.metrics.BinaryAccuracy()(tf.zeros_like(generated_preds), generated_preds)
+                values = [("generator_loss", generator_loss), ("critic_loss", critic_loss)]
+
+                self.generator_loss.append(generator_loss)
+                self.critic_loss.append(critic_loss)
 
                 progress_bar.add(self.batch_size, values=values)
             

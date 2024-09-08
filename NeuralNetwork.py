@@ -496,7 +496,7 @@ class AdversarialNetwork(NeuralNetwork):
         self.critic = model
 
     @tf.function
-    def training_step(self, images):
+    def training_step(self, images, update_critic=True, update_generator=True):
 
         noise_dim = 100
         noise = tf.random.normal([self.batch_size, noise_dim])
@@ -513,16 +513,23 @@ class AdversarialNetwork(NeuralNetwork):
         generator_grad = generator_tape.gradient(generator_loss, self.generator.get_model().trainable_variables)
         critic_grad = critic_tape.gradient(critic_loss, self.critic.get_model().trainable_variables)
 
-        self.generator.optimiser.apply_gradients(zip(generator_grad, self.generator.get_model().trainable_variables))
-        self.critic.optimiser.apply_gradients(zip(critic_grad, self.critic.get_model().trainable_variables))
+        if update_generator:
+            self.generator.optimiser.apply_gradients(zip(generator_grad, self.generator.get_model().trainable_variables))
+        if update_critic:
+            self.critic.optimiser.apply_gradients(zip(critic_grad, self.critic.get_model().trainable_variables))
     
-    def fit(self, dataset, val_dataset):
+    def fit(self, dataset, val_dataset, alpha=1):
         for epoch in range(self.epochs):
             print(f"Epoch {epoch + 1}/{self.epochs}")
             progress_bar = tf.keras.utils.Progbar(self.x_train.shape[0], stateful_metrics=None)
             for image_batch in dataset:
-                self.training_step(image_batch)
-                
+                if alpha == 1:
+                    self.training_step(image_batch)
+                elif alpha < 1:
+                    self.training_step(image_batch, update_critic=True, update_generator=not epoch % int(1/alpha))
+                else:
+                    self.training_step(image_batch, update_generator=True, update_critic=not epoch % int(alpha))
+
                 values = None
                 generated = self.generator.get_model()(AdversarialNetwork.z, training=False)
                 generated_preds = self.critic.model.predict(generated, verbose='0')
@@ -574,6 +581,3 @@ class AdversarialNetwork(NeuralNetwork):
         else:
             plt.savefig("training_visualisation2.png")
         return
-
-
-

@@ -479,50 +479,87 @@ class FunctionalNetwork(NeuralNetwork):
         self.is_functional = True
 
 class AdversarialNetwork(NeuralNetwork):
+    '''
+    A subclass of network designed for GANs
+    '''
+    
+    # a selection of 16 data seeds, each with dim 100
     z = tf.random.normal([16, 100])
 
     def __init__(self):
         super().__init__()
-        self.generator = None
-        self.critic = None
+        self.generator: NeuralNetwork = None
+        self.critic: NeuralNetwork = None
 
-        self.critic_loss = []
-        self.generator_loss = []
+        # learning records to keep track of
+        self.critic_loss: list = []
+        self.generator_loss: list = []
     
     def set_generator(self, model: NeuralNetwork):
+        '''
+        Define the generator of the GAN
+        '''
         self.generator = model
     
     def set_critic(self, model: NeuralNetwork):
+        '''
+        Define the critic of the GAN
+        '''
         self.critic = model
 
     @tf.function
     def training_step(self, images, update_critic=True, update_generator=True):
+        '''
+        Computes a training step of the GAN
 
-        noise_dim = 100
-        noise = tf.random.normal([self.batch_size, noise_dim])
+        Parameters:
+            images: the batch of real images
+            update_critic: whether this iteration should update the critic
+            update_generator: whether this iteration should update the generator
+        '''
+
+        # generates z values for the generator to map
+        noise = tf.random.normal([self.batch_size, 100])
 
         with tf.GradientTape() as generator_tape, tf.GradientTape() as critic_tape:
+            # forward propagate the z values through the generator
             generated_images = self.generator.get_model()(noise, training=True)
             
+            # pass in both real and fake data to the critic
             real_output = self.critic.get_model()(images, training=True)
             fake_output = self.critic.get_model()(generated_images, training=True)
 
+            # evaluate the loss functions
             generator_loss = self.generator.loss_function(fake_output)
             critic_loss = self.critic.loss_function(real_output, fake_output)
 
+        # calculate the gradients of both models
         generator_grad = generator_tape.gradient(generator_loss, self.generator.get_model().trainable_variables)
         critic_grad = critic_tape.gradient(critic_loss, self.critic.get_model().trainable_variables)
 
+        # update the models as required
         if update_generator:
             self.generator.optimiser.apply_gradients(zip(generator_grad, self.generator.get_model().trainable_variables))
         if update_critic:
             self.critic.optimiser.apply_gradients(zip(critic_grad, self.critic.get_model().trainable_variables))
     
     def fit(self, dataset, val_dataset, alpha=1):
+        '''
+        Fit the GAN
+
+        Parameters:
+            dataset: the batched dataset of images to process
+            val_dataset: the batched dataset used for validation
+            alpha: the update ratio of generator/critic. Defines how often each model is updated in proportion to each other
+        '''
         for epoch in range(self.epochs):
             print(f"Epoch {epoch + 1}/{self.epochs}")
+
+            # create a progress bar
             progress_bar = tf.keras.utils.Progbar(self.x_train.shape[0], stateful_metrics=None)
+
             for image_batch in dataset:
+                # execute the relevant training step
                 if alpha == 1:
                     self.training_step(image_batch)
                 elif alpha < 1:
@@ -530,42 +567,57 @@ class AdversarialNetwork(NeuralNetwork):
                 else:
                     self.training_step(image_batch, update_generator=True, update_critic=not epoch % int(alpha))
 
-                values = None
+                # generate fake data and predict it
                 generated = self.generator.get_model()(AdversarialNetwork.z, training=False)
                 generated_preds = self.critic.model.predict(generated, verbose='0')
 
+                # predict real data from the validation set
                 real_preds = self.critic.model.predict(val_dataset, verbose='0')
 
+                # evaluate the loss functions
                 generator_loss = self.generator.loss_function(generated_preds)
                 critic_loss = self.critic.loss_function(real_preds, generated_preds)
 
-                critic_fake_accuracy = tf.keras.metrics.BinaryAccuracy()(tf.zeros_like(generated_preds), generated_preds)
-                values = [("generator_loss", generator_loss), ("critic_loss", critic_loss)]
-
+                # store the values for logging
                 self.generator_loss.append(generator_loss)
                 self.critic_loss.append(critic_loss)
-
+                
+                # display values on progress bar
+                values = [("generator_loss", generator_loss), ("critic_loss", critic_loss)]
                 progress_bar.add(self.batch_size, values=values)
             
+            # generate image to save on each epoch
             IPython.display.clear_output(wait=True)
             self.generate_image(AdversarialNetwork.z)
         
+        # generate final image
         IPython.display.clear_output(wait=True)
         self.generate_image(AdversarialNetwork.z)
     
     def generate_image(self, test_input):
+        '''
+        Generate an array of inputs
+
+        Parameters:
+            test_input: the unmapped z-values to be used for generation
+        '''
+
+        # predict values
         predictions = self.generator.get_model()(test_input, training=False)
 
+        # plot predictions
         plt.figure(figsize=(4, 4))
-
         for i in range(predictions.shape[0]):
             plt.subplot(4, 4, i+1)
             plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
             plt.axis('off')
-
         plt.savefig(f'image_{time.time()}.png')
     
     def visualise_training(self, to_file=False):
+        '''
+        Inherits from NeuralNetwork.visualise_training
+        '''
+
         plot_size = (1, 1)
         fig, plot_axes = plt.subplots(*plot_size)
         fig.suptitle('Learning Curves')

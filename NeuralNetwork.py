@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import keras
 from typing import Optional
+import os
 
 import DataManager
 import IPython
@@ -261,9 +262,33 @@ class NeuralNetwork(GenericModel):
             )
         self.callbacks.append(earlystopping)
     
-    def enable_model_checkpoints(self, path="./checkpoints.keras"):
-        checkpoints = tf.keras.callbacks.ModelCheckpoint(path, save_freq="epoch")
+    def enable_model_checkpoints(self, path: str ="checkpoints", save_best_only: bool =False, **kwargs):
+        '''
+        Save the entire model to a checkpoint every epoch
+
+        Parameters:
+            path: the folder to store the data in
+            save_best_only: only saves the best epoch
+        '''
+        try:
+            os.mkdir(path)
+        except OSError:
+            pass
+        
+        if save_best_only:
+            checkpoints = tf.keras.callbacks.ModelCheckpoint(path + "/best_epoch.keras", **kwargs)
+        else:
+            checkpoints = tf.keras.callbacks.ModelCheckpoint(path + "/epoch_{epoch}.keras", **kwargs)
         self.callbacks.append(checkpoints)
+    
+    def load_checkpoint(self, path):
+        '''
+        Loads the parameters stored by enable_model_checkpoints.
+
+        Parameters:
+            path: the filepath of the checkpoint to load
+        '''
+        self.model.load_weights(path)
     
     def enable_tensorboard(self, path="./tensorboard.keras", **kwargs):
         tensorboard = tf.keras.callbacks.TensorBoard(log_dir=path, **kwargs)

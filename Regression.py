@@ -22,13 +22,9 @@ class Regression(GenericModel.GenericModel, ABC):
     A class which performs various types of regression.
     '''
     def __init__(self):
+        super().__init__()
         self.model: LinearModel | LogisticModel = None
         self.err_function: Callable = None
-
-        self.x_train: pd.DataFrame = None
-        self.y_train: pd.DataFrame = None
-        self.x_test: pd.DataFrame = None
-        self.y_test: pd.DataFrame = None
     
     @abstractmethod
     def set_regularisation(self, reg_type: str, alpha: float=1.0, l1_ratio: float=0.5):
@@ -54,34 +50,6 @@ class Regression(GenericModel.GenericModel, ABC):
         if self.y_train.shape[1] > 1:
             self.model = MultiOutputRegressor(self.model)
         self.model.fit(self.x_train, self.y_train)
-    
-    def add_training_data(self, x_train, y_train):
-        try:
-            x_train = x_train.get_data()
-        except:
-            pass
-
-        try:
-            y_train = y_train.get_data()
-        except:
-            pass
-
-        self.x_train = x_train
-        self.y_train = y_train
-    
-    def add_testing_data(self, x_test, y_test):
-        try:
-            x_test = x_test.get_data()
-        except:
-            pass
-        
-        try:
-            y_test = y_test.get_data()
-        except:
-            pass
-
-        self.x_test = x_test
-        self.y_test = y_test
     
     def set_err_function(self, err_function: Callable[[numpy.typing.ArrayLike, numpy.typing.ArrayLike], float]) -> None:
         '''

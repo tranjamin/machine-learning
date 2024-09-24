@@ -31,6 +31,7 @@ class NeuralNetwork(GenericModel):
     A class which performs (sequential) neural networks
     '''
     def __init__(self):
+        super().__init__()
         self.model: tf.keras.Sequential = None
         self.layers: list[tf.keras.layers.Layer] = []
 
@@ -302,34 +303,6 @@ class NeuralNetwork(GenericModel):
             self.metrics += metric
         else:
             self.metrics.append(metric)
-
-    def add_training_data(self, x_train, y_train):
-        try:
-            x_train = x_train.get_data()
-        except:
-            pass
-
-        try:
-            y_train = y_train.get_data()
-        except:
-            pass
-
-        self.x_train = x_train
-        self.y_train = y_train
-    
-    def add_testing_data(self, x_test, y_test):
-        try:
-            x_test = x_test.get_data()
-        except:
-            pass
-
-        try:
-            y_test = y_test.get_data()
-        except:
-            pass
-
-        self.x_test = x_test
-        self.y_test = y_test
 
     def compile_model(self, store_initial_values=False) -> None:
         '''

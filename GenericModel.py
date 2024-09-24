@@ -11,6 +11,11 @@ class GenericModel(ABC):
     '''
     Generic model that all other models should be extended from.
     '''
+    def __init__(self):
+        self.x_train: pd.DataFrame = None
+        self.y_train: pd.DataFrame = None
+        self.x_test: pd.DataFrame = None
+        self.y_test: pd.DataFrame = None
 
     @abstractmethod
     def get_model(self) -> Any:
@@ -24,13 +29,24 @@ class GenericModel(ABC):
         Copy and return a new model. Used for duplicating models.
         '''
 
-    @abstractmethod
     def add_training_data(self, x_train: DataManager.Data | pd.DataFrame, y_train: DataManager.Data | pd.DataFrame) -> None:
         '''
         Loads in the training data into the model. The data can be a DataManager.Data object or a pandas DataFrame. 
         It is not recommended to load data in other formats because it is not supported and errors may occur.
         The DataFrame must have all columns named and be suitably preprocessed into numeric data.
         '''
+        try:
+            x_train = x_train.get_data()
+        except:
+            pass
+
+        try:
+            y_train = y_train.get_data()
+        except:
+            pass
+
+        self.x_train = x_train
+        self.y_train = y_train
 
     @abstractmethod
     def add_testing_data(self, x_test: DataManager.Data | pd.DataFrame, y_test: DataManager.Data | pd.DataFrame) -> None:
@@ -39,6 +55,18 @@ class GenericModel(ABC):
         It is not recommended to load data in other formats because it is not supported and errors may occur.
         The DataFrame must have all columns named and be suitably preprocessed into numeric data.
         '''
+        try:
+            x_test = x_test.get_data()
+        except:
+            pass
+        
+        try:
+            y_test = y_test.get_data()
+        except:
+            pass
+
+        self.x_test = x_test
+        self.y_test = y_test
 
     @abstractmethod
     def fit(self) -> None:

@@ -11,7 +11,7 @@ import copy
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
-
+import scipy.stats as stats
 from abc import ABC, abstractmethod
 import random
 from sklearn.decomposition import PCA
@@ -355,7 +355,7 @@ class Data():
     # def col_to_cat(self, col_name):
     #     self.column_objects[col_name] = self.get_col(col_name).make_categorical()
 
-    def plot_against(self, x: str, y: str, categories: str | None =None) -> None:
+    def plot_against(self, x: str, y: str, categories: str | None =None, **kwargs) -> None:
         '''
         Plot a two numerical columns, x & y, against each other.
         Optionally also plot a categorical (or numerical) column using different colours.\n\r
@@ -369,7 +369,7 @@ class Data():
             else:
                 colormappings = self.get_col(categories).get_data()
                 
-        plt.scatter(self.get_col(x).get_data(), self.get_col(y).get_data(), c=colormappings)
+        plt.scatter(self.get_col(x).get_data(), self.get_col(y).get_data(), c=colormappings, **kwargs)
         plt.xlabel(self.get_col(x).name)
         plt.ylabel(self.get_col(y).name)
         # plt.title(f'Plot with colourmappings "{self.get_col(categories).name}"')
@@ -377,6 +377,19 @@ class Data():
         # plt.colorbar()
         # plt.ion()
         # plt.show()
+    
+    def plot_contours(self, feature_x: str, feature_y: str, num_classes: int, means: list, covariances: list, **kwargs):
+        colormaps = ["Purples", "Greens", "Oranges", "Reds", "YlOrBr", "YlGn", "Greys"]
+        data_x = self.get_col(feature_x).get_data()
+        data_y = self.get_col(feature_y).get_data()
+        x = np.linspace(min(data_x), max(data_x), 100)
+        y = np.linspace(min(data_y), max(data_y), 100)
+        grid = np.meshgrid(x, y)
+
+        for i in range(num_classes):
+            z = stats.multivariate_normal(means[i].flatten(), covariances[i]).pdf(np.dstack(grid))
+            plt.contour(*grid, z, levels=5, linewidths=2,cmap="Oranges", **kwargs)
+
 
     def encode_categoricals(self) -> Data:
         '''

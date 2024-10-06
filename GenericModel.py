@@ -48,7 +48,6 @@ class GenericModel(ABC):
         self.x_train = x_train
         self.y_train = y_train
 
-    @abstractmethod
     def add_testing_data(self, x_test: DataManager.Data | pd.DataFrame, y_test: DataManager.Data | pd.DataFrame) -> None:
         '''
         Loads in the testing data into the model. The data can be a DataManager.Data object or a pandas DataFrame. 

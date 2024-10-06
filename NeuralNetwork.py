@@ -5,6 +5,7 @@ import math
 import matplotlib.pyplot as plt
 
 import tensorflow as tf
+import wandb
 import keras
 from typing import Optional
 import os
@@ -294,6 +295,13 @@ class NeuralNetwork(GenericModel):
     def enable_tensorboard(self, path="./tensorboard.keras", **kwargs):
         tensorboard = tf.keras.callbacks.TensorBoard(log_dir=path, **kwargs)
         self.callbacks.append(tensorboard)
+
+    def enable_wandb(self, name="wandb-project"):
+        wandb.init(
+            project = name,
+            # config = tf.flags.FLAGS,
+            sync_tensorboard=True
+        )
 
     def add_metric(self, metric: str | tf.keras.metrics.Metric | list[str | tf.keras.metrics.Metric]) -> None:
         '''

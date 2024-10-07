@@ -483,6 +483,25 @@ class FunctionalNetwork(NeuralNetwork):
     def __init__(self):
         super().__init__()
         self.is_functional = True
+    
+    def generate_functional_model(self):
+        inputs = None
+        outputs = None
+        x = None
+        for layer_no, layer in enumerate(self.layers):
+            if layer_no == 0:
+                inputs = layer
+            elif layer_no == 1:
+                x = layer(inputs)
+            elif layer_no == len(self.layers) - 1:
+                outputs = layer(x)
+            else:
+                x = layer(x)
+
+        self.model = tf.keras.Model(inputs, outputs)
+    
+    def compile_functional_model(self):
+        self.model.compile(optimizer=self.optimiser, loss=self.loss_function, metrics=self.metrics)
 
 class AdversarialNetwork(NeuralNetwork):
     '''

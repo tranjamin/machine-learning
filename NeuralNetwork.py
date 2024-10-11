@@ -371,13 +371,22 @@ class NeuralNetwork(GenericModel):
         timekeeping.start_time()
         self.callbacks.append(timekeeping)
 
-        self.history = self.model.fit(batches,
-                            validation_data=validation_batches,
-                            epochs=self.epochs,
-                            verbose=verbose,
-                            callbacks=self.callbacks,
-                            **kwargs
-                            )
+        if validation_batches is None:
+            self.history = self.model.fit(batches,
+                                validation_data=validation_batches,
+                                epochs=self.epochs,
+                                verbose=verbose,
+                                callbacks=self.callbacks,
+                                **kwargs
+                                )
+        else:
+            self.history = self.model.fit(batches,
+                    epochs=self.epochs,
+                    verbose=verbose,
+                    validation_split = self.val_split,
+                    callbacks=self.callbacks,
+                    **kwargs
+                    )
         
         self.history.history['time_elapsed'] = timekeeping.epoch_times
     

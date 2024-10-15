@@ -297,7 +297,7 @@ class NeuralNetwork(GenericModel):
         self.callbacks.append(tensorboard)
 
     def enable_wandb(self, name="wandb-project"):
-        wandb.init(
+        self.wandb = wandb.init(
             project = name,
             # config = tf.flags.FLAGS,
             sync_tensorboard=True

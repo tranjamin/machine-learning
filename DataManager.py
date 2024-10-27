@@ -442,7 +442,7 @@ class Data():
         Example Usage:
         train_dataset, test_dataset = self.train_test_split(split_ratio=0.8, shuffle=True)
         '''
-        train, test = train_test_split(self.df, train_size=float(split_ratio), shuffle=shuffle, stratify=stratify, random=seed)
+        train, test = train_test_split(self.df, train_size=float(split_ratio), shuffle=shuffle, stratify=stratify, random_state=seed)
 
         return Data(train), Data(test)
 

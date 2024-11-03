@@ -132,6 +132,18 @@ class Regression(GenericModel.GenericModel, ABC):
             else:
                 theta[feature_name] = model.coef_[out_feature][ind]
         return theta
+    
+    def augment_hyperparam(self, param: str, value: Any):
+        return super().augment_hyperparam(param, value)
+
+    def evaluate_training_performance(self, target: str = None, probabilistic=False) -> float | dict[str, float]:
+        preds = self.predict(self.x_train)
+        return self.err_function(self.y_train, preds)
+    
+    def evaluate_testing_performance(self, target: str = None, probabilistic=False) -> float | dict[str, float]:
+        preds = self.predict(self.x_test)
+        return self.err_function(self.y_test, preds)
+
 class LinearRegression(Regression):
     '''
     A class specifically tailored to perform linear regression. Designed to be used with the DataManager module.
@@ -287,3 +299,6 @@ class MulticlassRegression(Regression):
     def __init__(self):
         super().__init__()
         self.model = LogisticModel()
+    
+    def set_regularisation(self, reg_type: str, alpha: float = 1, l1_ratio: float = 0.5):
+        return
